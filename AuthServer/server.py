@@ -9,6 +9,7 @@ import json
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sirs is an interested subject'
+# update this in your machine
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///C:\\Users\\cash\\MEIC\\SIRS\\SIRS\\Project\\AuthServer\\db.sqlite'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 
@@ -126,5 +127,5 @@ def get_user_devices(id):
 
 if __name__ == '__main__':
     db.create_all()
-    app.run()
+    app.run(port=8000)
 
