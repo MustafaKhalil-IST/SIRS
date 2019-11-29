@@ -25,6 +25,7 @@ class User(db.Model):
     devices = db.relationship('Device', backref='users', lazy=True)
 
     def hash_password(self, password):
+        # TODO use PyCrypto instead
         self.password_hash = pwd_context.encrypt(password)
 
     def verify_password(self, password):
@@ -73,7 +74,7 @@ def verify_password(username_or_token, password):
     return True
 
 
-@app.route('/api/users', methods=['POST'])
+@app.route('/auth/users', methods=['POST'])
 def register_user():
     username = request.json.get('username')
     password = request.json.get('password')
@@ -85,24 +86,23 @@ def register_user():
     user.hash_password(password)
     db.session.add(user)
     db.session.commit()
-    return jsonify({'username': user.username}), 201
+    return jsonify({'user_id': user.id}), 201
 
 
 @app.route('/api/users', methods=['GET'])
 def all_users():
     users = User.query.all()
-    print(users)
-    return jsonify({'users': 'done'}), 201
+    return jsonify({'users': users}), 201
 
 
-@app.route('/api/token')
+@app.route('/auth/token', methods=['POST'])
 @auth.login_required
 def get_auth_token():
     token = g.user.generate_auth_token(600)
     return jsonify({'token': token.decode('ascii'), 'duration': 600})
 
 
-@app.route('/api/users/<int:id>/devices', methods=['POST'])
+@app.route('/auth/users/<int:id>/devices', methods=['POST'])
 @auth.login_required
 def add_device(id):
     device_mac_address = request.json.get('device_mac_address')
@@ -112,10 +112,10 @@ def add_device(id):
     device = Device(mac_address=device_mac_address, owner_id=user.id)
     db.session.add(device)
     db.session.commit()
-    return jsonify({'message': 'success'})
+    return jsonify({'device_id': device.id})
 
 
-@app.route('/api/users/<int:id>/devices', methods=['GET'])
+@app.route('/auth/users/<int:id>/devices', methods=['GET'])
 @auth.login_required
 def get_user_devices(id):
     user = User.query.get(id)

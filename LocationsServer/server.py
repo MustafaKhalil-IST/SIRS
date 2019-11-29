@@ -63,17 +63,17 @@ def get_location(dev):
     return jsonify({'location': location})
 
 
-@app.route('/locations', methods=['POST'])
-def set_location():
-    data = request.get_json()  # must receive json with deviceID, macAddress, location
-
-    devicecheck = db.session.query(Devices).filter(Devices.deviceID == data['dev']).one_or_none()
-    if devicecheck is None:
-        new_Device = Devices(deviceID=data['dev'], macAddress=data['macAddress'])
+@app.route('/locations/<dev>', methods=['POST'])
+def set_location(dev):
+    data = request.get_json()  # must receive json with macAddress, location
+    print(data)
+    device_check = db.session.query(Devices).filter(Devices.deviceID == dev).one_or_none()
+    if device_check is None:
+        new_Device = Devices(deviceID=dev, macAddress=data['mac_address'])
         db.session.add(new_Device)
         db.session.commit()
 
-    new_location = Location(devices_id=data['dev'], location=data['location'])
+    new_location = Location(devices_id=dev, location=data['location'])
     db.session.add(new_location)
     db.session.commit()
 
@@ -83,11 +83,11 @@ def set_location():
 @app.route('/locations', methods=['PUT']) #must receive json with deviceID, macAddress
 def refresh_Mac_Address():
     data = request.get_json()
-    mac_refresh = db.session.query(Devices.deviceID).filter(Devices.deviceID == data['dev']).update({"macAddress": data['macAddress']})
+    db.session.query(Devices.deviceID).filter(Devices.deviceID == data['dev']).update({"macAddress": data['macAddress']})
     db.session.commit()
     return jsonify({'message': 'action done'})
 
 
 if __name__ == '__main__':
     db.create_all()
-    app.run(debug=True, port=8081)
+    app.run(debug=True, port=8001)
