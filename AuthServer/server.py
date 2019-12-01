@@ -1,4 +1,8 @@
 import os
+import ast
+from Cryptodome.Cipher import PKCS1_OAEP, AES
+from Cryptodome.PublicKey import RSA
+from Cryptodome.Random import get_random_bytes
 from flask import Flask, abort, request, jsonify, g, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_httpauth import HTTPBasicAuth
@@ -76,8 +80,9 @@ def verify_password(username_or_token, password):
 
 @app.route('/auth/users', methods=['POST'])
 def register_user():
-    username = request.json.get('username')
-    password = request.json.get('password')
+    username = decrypt(ast.literal_eval(request.json.get('username')))
+    password = decrypt(ast.literal_eval(request.json.get('password')))
+
     if username is None or password is None:
         abort(400)
     if User.query.filter_by(username=username).first() is not None:
@@ -89,10 +94,21 @@ def register_user():
     return jsonify({'user_id': user.id}), 201
 
 
-@app.route('/api/users', methods=['GET'])
-def all_users():
-    users = User.query.all()
-    return jsonify({'users': users}), 201
+@app.route('/auth/users/login', methods=['POST'])
+def login_user():
+    username = decrypt(ast.literal_eval(request.json.get('username')))
+    password = decrypt(ast.literal_eval(request.json.get('password')))
+
+    if username is None or password is None:
+        abort(400)
+    if User.query.filter_by(username=username).first() is None:
+        abort(400)
+    user = User.query.filter_by(username=username).first()
+    login = verify_password(username, password)
+    if login:
+        return jsonify({'user_id': user.id}), 201
+    else:
+        return jsonify({'message': "credentials are wrong"}), 401
 
 
 @app.route('/auth/token', methods=['POST'])
@@ -105,7 +121,7 @@ def get_auth_token():
 @app.route('/auth/users/<int:id>/devices', methods=['POST'])
 @auth.login_required
 def add_device(id):
-    device_mac_address = request.json.get('device_mac_address')
+    device_mac_address = decrypt(ast.literal_eval(request.json.get('device_mac_address')))
     user = User.query.get(id)
     if not user:
         abort(400)
@@ -115,17 +131,70 @@ def add_device(id):
     return jsonify({'device_id': device.id})
 
 
+@app.route('/auth/<int:id>/get_public_key', methods=['POST'])
+@auth.login_required
+def get_public_key(id):
+    public_key = request.files['upload_file']
+    public_key.save('keys\\public_key_{}.pem'.format(id))
+    return jsonify({'message': 'shared'})
+
+
 @app.route('/auth/users/<int:id>/devices', methods=['GET'])
 @auth.login_required
 def get_user_devices(id):
     user = User.query.get(id)
     if not user:
         abort(400)
+    msg = str(encrypt(str([json_of_device(device) for device in user.devices]), id=id))
+    return jsonify({'devices': msg})
 
-    return jsonify({'devices': [json_of_device(device) for device in user.devices]})
+
+def encrypt(message, id):
+    data = message.encode("utf-8")
+
+    recipient_key = RSA.import_key(open("keys\\public_key_{}.pem".format(id)).read())
+    session_key = get_random_bytes(16)
+
+    # Encrypt the session key with the public RSA key
+    cipher_rsa = PKCS1_OAEP.new(recipient_key)
+    enc_session_key = cipher_rsa.encrypt(session_key)
+
+    # Encrypt the data with the AES session key
+    cipher_aes = AES.new(session_key, AES.MODE_EAX)
+    ciphertext, tag = cipher_aes.encrypt_and_digest(data)
+
+    return (enc_session_key, cipher_aes.nonce, tag, ciphertext)
+
+
+def decrypt(message):
+    private_key = RSA.import_key(open("keys\\server_private.pem").read())
+    enc_session_key, nonce, tag, ciphertext = message
+
+    # Decrypt the session key with the private RSA key
+    cipher_rsa = PKCS1_OAEP.new(private_key)
+    session_key = cipher_rsa.decrypt(enc_session_key)
+
+    # Decrypt the data with the AES session key
+    cipher_aes = AES.new(session_key, AES.MODE_EAX, nonce)
+    data = cipher_aes.decrypt_and_verify(ciphertext, tag)
+    return data.decode("utf-8")
+
+
+def generate_private_public_keys():
+    key = RSA.generate(2048)
+    private_key = key.export_key()
+    file_out = open("keys\\server_private.pem", "wb")
+    file_out.write(private_key)
+    file_out.close()
+
+    public_key = key.publickey().export_key()
+    file_out = open("keys\\server_public.pem", "wb")
+    file_out.write(public_key)
+    file_out.close()
 
 
 if __name__ == '__main__':
+    # generate_private_public_keys()
     db.create_all()
     app.run(port=8000)
 

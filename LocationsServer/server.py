@@ -1,3 +1,6 @@
+from Cryptodome.Cipher import AES, PKCS1_OAEP
+from Cryptodome.PublicKey import RSA
+from Cryptodome.Random import get_random_bytes
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import os
@@ -48,11 +51,12 @@ class Location(db.Model):
     devices_id = db.Column(db.Integer, db.ForeignKey('devices.deviceID'))
 
 
-def check_authorization():
-    # TODO
+def check_authorization(username, password):
+    # TODO call auth server to check authorization
+    # TODO add encryption
     pass
 
-
+# TODO add encryption
 @app.route('/locations/<dev>', methods=['GET'])
 def get_location(dev):
     location = db.session.query(Location.location).filter_by(devices_id=dev).order_by(Location.timestamp.desc()).first()
@@ -62,11 +66,10 @@ def get_location(dev):
 
     return jsonify({'location': location})
 
-
+# TODO add decryption
 @app.route('/locations/<dev>', methods=['POST'])
 def set_location(dev):
-    data = request.get_json()  # must receive json with macAddress, location
-    print(data)
+    data = request.json()  # must receive json with macAddress, location
     device_check = db.session.query(Devices).filter(Devices.deviceID == dev).one_or_none()
     if device_check is None:
         new_Device = Devices(deviceID=dev, macAddress=data['mac_address'])
@@ -79,13 +82,65 @@ def set_location(dev):
 
     return jsonify({'message': 'New location successfully added!'})
 
-
+# TODO add decryption
 @app.route('/locations', methods=['PUT']) #must receive json with deviceID, macAddress
 def refresh_Mac_Address():
     data = request.get_json()
     db.session.query(Devices.deviceID).filter(Devices.deviceID == data['dev']).update({"macAddress": data['macAddress']})
     db.session.commit()
     return jsonify({'message': 'action done'})
+
+
+# TODO must be done after checking authorization by calling auth server
+@app.route('/locations/<int:id>/get_public_key', methods=['POST'])
+def get_public_key(id):
+    public_key = request.files['upload_file']
+    public_key.save('keys\\public_key_{}.pem'.format(id))
+    return jsonify({'message': 'shared'})
+
+
+def encrypt(message, id):
+    data = message.encode("utf-8")
+
+    recipient_key = RSA.import_key(open("keys\\public_key_{}.pem".format(id)).read())
+    session_key = get_random_bytes(16)
+
+    # Encrypt the session key with the public RSA key
+    cipher_rsa = PKCS1_OAEP.new(recipient_key)
+    enc_session_key = cipher_rsa.encrypt(session_key)
+
+    # Encrypt the data with the AES session key
+    cipher_aes = AES.new(session_key, AES.MODE_EAX)
+    ciphertext, tag = cipher_aes.encrypt_and_digest(data)
+
+    return (enc_session_key, cipher_aes.nonce, tag, ciphertext)
+
+
+def decrypt(message):
+    private_key = RSA.import_key(open("keys\\server_private.pem").read())
+    enc_session_key, nonce, tag, ciphertext = message
+
+    # Decrypt the session key with the private RSA key
+    cipher_rsa = PKCS1_OAEP.new(private_key)
+    session_key = cipher_rsa.decrypt(enc_session_key)
+
+    # Decrypt the data with the AES session key
+    cipher_aes = AES.new(session_key, AES.MODE_EAX, nonce)
+    data = cipher_aes.decrypt_and_verify(ciphertext, tag)
+    return data.decode("utf-8")
+
+
+def generate_private_public_keys():
+    key = RSA.generate(2048)
+    private_key = key.export_key()
+    file_out = open("keys\\locations_server_private.pem", "wb")
+    file_out.write(private_key)
+    file_out.close()
+
+    public_key = key.publickey().export_key()
+    file_out = open("keys\\locations_public.pem", "wb")
+    file_out.write(public_key)
+    file_out.close()
 
 
 if __name__ == '__main__':
