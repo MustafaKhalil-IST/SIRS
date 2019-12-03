@@ -79,7 +79,8 @@ class ClientApp:
 
         for dev in devices:
             r_loc = requests.get(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, dev['id']))
-            print(r_loc.json())
+            location = ast.literal_eval(self.decrypt(ast.literal_eval(r_loc.json()['location'])))
+            print(dev, location)
 
         #return locations
 
@@ -131,9 +132,15 @@ class ClientApp:
 
     def share_public_key(self):
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
-        files = {'upload_file': open('keys\\public.pem', 'r')}
+        pk = open('keys\\public.pem', 'r')
+        files = {'upload_file': pk}
         requests.post(self.AUTH_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
+        pk.close()
+
+        pk = open('keys\\public.pem', 'r')
+        files = {'upload_file': pk}
         requests.post(self.LOCATIONS_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
+        pk.close()
 
     def encrypt(self, message, id='AUTH-SERVER'):
         data = message.encode("utf-8")

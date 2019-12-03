@@ -76,10 +76,9 @@ def get_location(id, dev):
     if not location:
         return jsonify({'message': 'No location information!'})
 
-    # TODO a problem here
-    # location = encrypt(location, id)
+    location = encrypt(location, id)
 
-    return jsonify({'location': location})
+    return jsonify({'location': str(location)})
 
 
 @app.route('/locations/<id>/locate/<dev>', methods=['POST'])
