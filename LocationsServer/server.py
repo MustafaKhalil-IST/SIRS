@@ -5,10 +5,13 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import os
 from datetime import datetime
+import requests
+import ast
 
 app = Flask(__name__)
 
-
+"""
+# the values of those depend on environment variables
 def get_env_variable(name):
     try:
         return os.environ[name]
@@ -16,9 +19,6 @@ def get_env_variable(name):
         message = "Expected environment variable '{}' not set.".format(name)
         raise Exception(message)
 
-
-# the values of those depend on environment variables
-"""
 POSTGRES_URL = get_env_variable("POSTGRES_URL")
 POSTGRES_USER = get_env_variable("POSTGRES_USER")
 POSTGRES_PW = get_env_variable("POSTGRES_PW")
@@ -31,7 +31,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # silence the deprecation warning
 """
 
-app.config['SECRET_KEY'] = 'sirs is an so interested subject'
+app.config['SECRET_KEY'] = 'sirs is very interested subject'
 # update this in your machine
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///C:\\Users\\cash\\MEIC\\SIRS\\SIRS\\Project\\LocationsServer\\db.sqlite'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
@@ -52,51 +52,85 @@ class Location(db.Model):
 
 
 def check_authorization(username, password):
-    # TODO call auth server to check authorization
-    # TODO add encryption
-    pass
+    encrypted_data = {
+        "username": str(encrypt(username, "AUTH-SERVER")),
+        "password": str(encrypt(password, "AUTH-SERVER"))
+    }
+
+    data = {
+        "data": encrypted_data
+    }
+
+    AUTH_SERVER_URL = "http://127.0.0.1:8000/auth"
+
+    r = requests.post(AUTH_SERVER_URL + '/check-authorization', json=data)
+
+    return r.json()['is-authorized']
 
 # TODO add encryption
-@app.route('/locations/<dev>', methods=['GET'])
-def get_location(dev):
+@app.route('/locations/<id>/locate/<dev>', methods=['GET'])
+def get_location(id, dev):
     location = db.session.query(Location.location).filter_by(devices_id=dev).order_by(Location.timestamp.desc()).first()
+    location = location[0]
 
     if not location:
         return jsonify({'message': 'No location information!'})
 
+    # TODO a problem here
+    # location = encrypt(location, id)
+
     return jsonify({'location': location})
 
-# TODO add decryption
-@app.route('/locations/<dev>', methods=['POST'])
-def set_location(dev):
-    data = request.json()  # must receive json with macAddress, location
-    device_check = db.session.query(Devices).filter(Devices.deviceID == dev).one_or_none()
-    if device_check is None:
-        new_Device = Devices(deviceID=dev, macAddress=data['mac_address'])
-        db.session.add(new_Device)
+
+@app.route('/locations/<id>/locate/<dev>', methods=['POST'])
+def set_location(id, dev):
+    auth = request.authorization
+
+    username = auth['username']
+    password = auth['password']
+
+    if check_authorization(username=username, password=password):
+        data = request.get_json()  # must receive json with macAddress, location
+        device_check = db.session.query(Devices).filter(Devices.deviceID == dev).one_or_none()
+        if device_check is None:
+            mac_address = decrypt(ast.literal_eval(data.get('mac_address')))
+            new_Device = Devices(deviceID=dev, macAddress=mac_address)
+            db.session.add(new_Device)
+            db.session.commit()
+
+        location = decrypt(ast.literal_eval(data.get('location')))
+        new_location = Location(devices_id=dev, location=location)
+        db.session.add(new_location)
         db.session.commit()
 
-    new_location = Location(devices_id=dev, location=data['location'])
-    db.session.add(new_location)
-    db.session.commit()
+        return jsonify({'message': 'New location successfully added!'})
 
-    return jsonify({'message': 'New location successfully added!'})
 
-# TODO add decryption
 @app.route('/locations', methods=['PUT']) #must receive json with deviceID, macAddress
 def refresh_Mac_Address():
     data = request.get_json()
-    db.session.query(Devices.deviceID).filter(Devices.deviceID == data['dev']).update({"macAddress": data['macAddress']})
+
+    mac_address = decrypt(ast.literal_eval(data.get('macAddress')))
+    dev = decrypt(ast.literal_eval(data.get('dev')))
+
+    db.session.query(Devices.deviceID).filter(Devices.deviceID == dev).update({"macAddress": mac_address})
     db.session.commit()
     return jsonify({'message': 'action done'})
 
 
-# TODO must be done after checking authorization by calling auth server
 @app.route('/locations/<int:id>/get_public_key', methods=['POST'])
 def get_public_key(id):
-    public_key = request.files['upload_file']
-    public_key.save('keys\\public_key_{}.pem'.format(id))
-    return jsonify({'message': 'shared'})
+    auth = request.authorization
+
+    username = auth['username']
+    password = auth['password']
+
+    if check_authorization(username, password):
+        public_key = request.files['upload_file']
+        public_key.save('keys\\public_key_{}.pem'.format(id))
+        return jsonify({'message': 'shared'})
+    else:
+        return jsonify({'message': 'unauthorized'})
 
 
 def encrypt(message, id):
@@ -117,7 +151,7 @@ def encrypt(message, id):
 
 
 def decrypt(message):
-    private_key = RSA.import_key(open("keys\\server_private.pem").read())
+    private_key = RSA.import_key(open("keys\\private_key_LOCATIONS-SERVER.pem").read())
     enc_session_key, nonce, tag, ciphertext = message
 
     # Decrypt the session key with the private RSA key
@@ -133,12 +167,12 @@ def decrypt(message):
 def generate_private_public_keys():
     key = RSA.generate(2048)
     private_key = key.export_key()
-    file_out = open("keys\\locations_server_private.pem", "wb")
+    file_out = open("keys\\private_key_LOCATIONS-SERVER.pem", "wb")
     file_out.write(private_key)
     file_out.close()
 
     public_key = key.publickey().export_key()
-    file_out = open("keys\\locations_public.pem", "wb")
+    file_out = open("keys\\public_key_LOCATIONS-SERVER.pem", "wb")
     file_out.write(public_key)
     file_out.close()
 

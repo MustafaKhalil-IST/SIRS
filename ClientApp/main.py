@@ -1,13 +1,14 @@
 # importing the requests library 
 import requests
 import ast
+import random
 from requests.auth import HTTPBasicAuth
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Random import get_random_bytes
 from Cryptodome.Cipher import AES, PKCS1_OAEP
 
 
-# TODO add logging, bluetooth, clients intercommunication, share public key
+# TODO add logging, bluetooth, clients intercommunication
 class ClientApp:
     AUTH_SERVER_URL = "http://127.0.0.1:8000/auth"
     LOCATIONS_SERVER_URL = "http://127.0.0.1:8001/locations"
@@ -24,11 +25,15 @@ class ClientApp:
         r = requests.post(url=self.AUTH_SERVER_URL + '/users', json=encrypted_data)
 
         if r.status_code == 201 or r.status_code == 200:
+            self.login(username, password)
+            self.generate_private_public_keys()
+            self.share_public_key()
             print("User Registered")
         else:
             print("Something wrong")
 
     def login(self, username, password):
+        print("login")
         # encrypt data
         encrypted_data = {
             "username": str(self.encrypt(username)),
@@ -41,7 +46,6 @@ class ClientApp:
             self.PASSWORD = password
             self.USER_ID = r.json()['user_id']
 
-
     def refresh_token(self, username, password):
         # TODO not quite clear how to use
         headers = {
@@ -52,10 +56,7 @@ class ClientApp:
         print(r.status_code)
 
     def add_this_device(self, device_mac_address):
-        data = {
-            "device_mac_address": device_mac_address,
-        }
-
+        print("add device")
         # encrypt data
         encrypted_data = {
             "device_mac_address": str(self.encrypt(device_mac_address))
@@ -70,13 +71,14 @@ class ClientApp:
             # print(r.json())
 
     def check_my_devices_location(self):
+        print("check locations")
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
         r_auth = requests.get(self.AUTH_SERVER_URL + '/users/{}/devices'.format(self.USER_ID), auth=auth)
 
         devices = ast.literal_eval(self.decrypt(ast.literal_eval(r_auth.json()['devices'])))
 
         for dev in devices:
-            r_loc = requests.get(self.LOCATIONS_SERVER_URL + '/{}'.format(dev['id']))
+            r_loc = requests.get(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, dev['id']))
             print(r_loc.json())
 
         #return locations
@@ -91,21 +93,23 @@ class ClientApp:
             return False
 
     def update_my_location(self):
-        import random
+        print("update location")
+        auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
         location = (random.random() * 120, random.random() * 120)
 
         # encrypt data
         encrypted_data = {
-            'location': str(self.encrypt(str(location))),
-            'mac_address': str(self.encrypt(self.MAC_ADDRESS))
+            'location': str(self.encrypt(str(location), id="LOCATIONS-SERVER")),
+            'mac_address': str(self.encrypt(self.MAC_ADDRESS, id="LOCATIONS-SERVER"))
         }
 
-        r_loc = requests.post(self.LOCATIONS_SERVER_URL + '/{}'.format(self.DEVICE_ID), json=encrypted_data)
+        r_loc = requests.post(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, self.DEVICE_ID),
+                              json=encrypted_data, auth=auth)
 
         if r_loc.status_code != 200:
-            print("Something is wrong")
+            print("-     not updated")
         else:
-            print("Done")
+            print("-     updated")
 
     def receive_info_from_nearby_devices(self):
         pass
@@ -128,15 +132,13 @@ class ClientApp:
     def share_public_key(self):
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
         files = {'upload_file': open('keys\\public.pem', 'r')}
-        r = requests.post(self.AUTH_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
+        requests.post(self.AUTH_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
+        requests.post(self.LOCATIONS_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
 
-        if r.status_code != 200:
-            pass
-
-    def encrypt(self, message):
+    def encrypt(self, message, id='AUTH-SERVER'):
         data = message.encode("utf-8")
 
-        recipient_key = RSA.import_key(open("keys\\server_public.pem").read())
+        recipient_key = RSA.import_key(open("keys\\public_key_{}.pem".format(id)).read())
         session_key = get_random_bytes(16)
 
         # Encrypt the session key with the public RSA key
@@ -163,21 +165,9 @@ class ClientApp:
         return data.decode("utf-8")
 
 
-"""
 client = ClientApp()
-print(client.internet_on())
-# client.register_user("mustafa_6", "1291241241")
-client.login("mustafa_6", "1291241241")
-
-client.add_this_device("ASFA42DWF3")
-client.update_my_location()
-
-client.check_my_devices_location()
-"""
-
-client = ClientApp()
-#client.register_user("mustafa_7", "1291241241")
-client.login("mustafa_6", "1291241241")
+client.register_user("mustafa", "1291241241")
+# client.login("mustafa", "1291241241")
 client.add_this_device("ASFA42DWF3")
 client.update_my_location()
 client.check_my_devices_location()

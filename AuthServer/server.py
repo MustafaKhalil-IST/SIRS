@@ -149,6 +149,18 @@ def get_user_devices(id):
     return jsonify({'devices': msg})
 
 
+@app.route('/auth/check-authorization', methods=['POST'])
+def check_authorization():
+    LOCATION_SERVER = "127.0.0.1"# to be updated
+    if request.remote_addr != LOCATION_SERVER:
+        return jsonify({"message": "request is not authorized"})
+
+    data = request.json.get("data")
+    username = decrypt(ast.literal_eval(data['username']))
+    password = decrypt(ast.literal_eval(data['password']))
+
+    return jsonify({'is-authorized': verify_password(username, password)})
+
 def encrypt(message, id):
     data = message.encode("utf-8")
 
@@ -167,7 +179,7 @@ def encrypt(message, id):
 
 
 def decrypt(message):
-    private_key = RSA.import_key(open("keys\\server_private.pem").read())
+    private_key = RSA.import_key(open("keys\\private_key_AUTH-SERVER.pem").read())
     enc_session_key, nonce, tag, ciphertext = message
 
     # Decrypt the session key with the private RSA key
@@ -183,12 +195,12 @@ def decrypt(message):
 def generate_private_public_keys():
     key = RSA.generate(2048)
     private_key = key.export_key()
-    file_out = open("keys\\server_private.pem", "wb")
+    file_out = open("keys\\private_key_AUTH-SERVER.pem", "wb")
     file_out.write(private_key)
     file_out.close()
 
     public_key = key.publickey().export_key()
-    file_out = open("keys\\server_public.pem", "wb")
+    file_out = open("keys\\public_key_AUTH-SERVER.pem", "wb")
     file_out.write(public_key)
     file_out.close()
 
