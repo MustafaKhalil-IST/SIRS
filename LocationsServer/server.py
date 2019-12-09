@@ -1,6 +1,6 @@
-from Cryptodome.Cipher import AES, PKCS1_OAEP
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Random import get_random_bytes
+from Crypto.Cipher import AES, PKCS1_OAEP
+from Crypto.PublicKey import RSA
+from Crypto.Random import get_random_bytes
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import os
@@ -33,7 +33,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # silence the deprecation 
 
 app.config['SECRET_KEY'] = 'sirs is very interested subject'
 # update this in your machine
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///C:\\Users\\cash\\MEIC\\SIRS\\SIRS\\Project\\LocationsServer\\db.sqlite'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///./db.sqlite'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 db = SQLAlchemy(app)
 
@@ -105,6 +105,26 @@ def set_location(id, dev):
         return jsonify({'message': 'New location successfully added!'})
 
 
+@app.route('/auth/get-redirected-info', methods=['POST'])
+def get_redirected_info():
+    auth = request.authorization
+
+    username = auth['username']
+    password = auth['password']
+    if not check_authorization(username, password):
+        return
+
+    data = request.json()
+    data = decrypt(ast.literal_eval(data))
+    user_id = data['user_id']
+    device_id = data['user_id']
+    location = data['location']
+
+    new_location = Location(devices_id=device_id, location=location)
+    db.session.add(new_location)
+    db.session.commit()
+
+
 @app.route('/locations', methods=['PUT']) #must receive json with deviceID, macAddress
 def refresh_Mac_Address():
     data = request.get_json()
@@ -126,7 +146,7 @@ def get_public_key(id):
 
     if check_authorization(username, password):
         public_key = request.files['upload_file']
-        public_key.save('keys\\public_key_{}.pem'.format(id))
+        public_key.save('keys/public_key_{}.pem'.format(id))
         return jsonify({'message': 'shared'})
     else:
         return jsonify({'message': 'unauthorized'})
@@ -135,7 +155,7 @@ def get_public_key(id):
 def encrypt(message, id):
     data = message.encode("utf-8")
 
-    recipient_key = RSA.import_key(open("keys\\public_key_{}.pem".format(id)).read())
+    recipient_key = RSA.import_key(open("keys/public_key_{}.pem".format(id)).read())
     session_key = get_random_bytes(16)
 
     # Encrypt the session key with the public RSA key
@@ -150,7 +170,7 @@ def encrypt(message, id):
 
 
 def decrypt(message):
-    private_key = RSA.import_key(open("keys\\private_key_LOCATIONS-SERVER.pem").read())
+    private_key = RSA.import_key(open("keys/private_key_LOCATIONS-SERVER.pem").read())
     enc_session_key, nonce, tag, ciphertext = message
 
     # Decrypt the session key with the private RSA key
@@ -166,12 +186,12 @@ def decrypt(message):
 def generate_private_public_keys():
     key = RSA.generate(2048)
     private_key = key.export_key()
-    file_out = open("keys\\private_key_LOCATIONS-SERVER.pem", "wb")
+    file_out = open("keys/private_key_LOCATIONS-SERVER.pem", "wb")
     file_out.write(private_key)
     file_out.close()
 
     public_key = key.publickey().export_key()
-    file_out = open("keys\\public_key_LOCATIONS-SERVER.pem", "wb")
+    file_out = open("keys/public_key_LOCATIONS-SERVER.pem", "wb")
     file_out.write(public_key)
     file_out.close()
 

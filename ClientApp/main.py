@@ -1,21 +1,41 @@
-# importing the requests library 
+import bluetooth
 import requests
 import ast
 import random
+from uuid import getnode
 from requests.auth import HTTPBasicAuth
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Random import get_random_bytes
-from Cryptodome.Cipher import AES, PKCS1_OAEP
+from Crypto.PublicKey import RSA
+from Crypto.Random import get_random_bytes
+from Crypto.Cipher import AES, PKCS1_OAEP
+import threading
+import time
 
 
-# TODO add logging, bluetooth, clients intercommunication
+def bluetooth_point_reaction(client):
+    try:
+        client.receive_info_from_nearby_devices()
+    except:
+        print("Bluetooth is not connected")
+
+
+def periodic_location_update(client):
+    while True:
+        if client.LOGGEDIN:
+            client.update_my_location()
+        time.sleep(60)
+
+
+# TODO add logging
 class ClientApp:
     AUTH_SERVER_URL = "http://127.0.0.1:8000/auth"
     LOCATIONS_SERVER_URL = "http://127.0.0.1:8001/locations"
+    LOGGEDIN = False
     USERNAME, PASSWORD, USER_ID, DEVICE_ID, TOKEN, MAC_ADDRESS = None, None, None, None, None, None
 
     """User Interface"""
     def register_user(self, username, password):
+        self.generate_private_public_keys()
+
         # encrypt data
         encrypted_data = {
             "username": str(self.encrypt(username)),
@@ -26,37 +46,31 @@ class ClientApp:
 
         if r.status_code == 201 or r.status_code == 200:
             self.login(username, password)
-            self.generate_private_public_keys()
             self.share_public_key()
-            print("User Registered")
+            print("Registeration: User Registered")
         else:
-            print("Something wrong")
+            print("Registeration: Something is wrong")
 
     def login(self, username, password):
-        print("login")
         # encrypt data
         encrypted_data = {
             "username": str(self.encrypt(username)),
-            "password": str(self.encrypt(password))
+            "password": str(self.encrypt(password)),
+            "device_mac_address": str(self.encrypt(str(getnode())))
         }
 
         r = requests.post(url=self.AUTH_SERVER_URL + '/users/login', json=encrypted_data)
         if r.status_code == 201 or r.status_code == 200:
             self.USERNAME = username
             self.PASSWORD = password
+            self.MAC_ADDRESS = str(getnode())
+            self.DEVICE_ID = r.json()['device_id']
             self.USER_ID = r.json()['user_id']
+            self.LOGGEDIN = True
 
-    def refresh_token(self, username, password):
-        # TODO not quite clear how to use
-        headers = {
-            "username": username,
-            "password": password
-        }
-        r = requests.post(self.AUTH_SERVER_URL + '/token', auth=headers)
-        print(r.status_code)
 
-    def add_this_device(self, device_mac_address):
-        print("add device")
+    def add_this_device(self):
+        device_mac_address = str(getnode())
         # encrypt data
         encrypted_data = {
             "device_mac_address": str(self.encrypt(device_mac_address))
@@ -68,15 +82,16 @@ class ClientApp:
         if r.status_code == 200:
             self.DEVICE_ID = r.json()['device_id']
             self.MAC_ADDRESS = device_mac_address
+            print("Add Device: This device has been added")
             # print(r.json())
 
     def check_my_devices_location(self):
-        print("check locations")
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
         r_auth = requests.get(self.AUTH_SERVER_URL + '/users/{}/devices'.format(self.USER_ID), auth=auth)
 
         devices = ast.literal_eval(self.decrypt(ast.literal_eval(r_auth.json()['devices'])))
 
+        print('Locations: ')
         for dev in devices:
             r_loc = requests.get(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, dev['id']))
             location = ast.literal_eval(self.decrypt(ast.literal_eval(r_loc.json()['location'])))
@@ -85,18 +100,19 @@ class ClientApp:
         #return locations
 
     """Devices Interface"""
+    def get_device_loation(self):
+        return (random.random() * 120, random.random() * 120)
+
     def is_server_reachable(self):
         try:
-            # TODO substitute with server url
             requests.get('https://www.google.com/', timeout=2)
             return True
         except:
             return False
 
     def update_my_location(self):
-        print("update location")
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
-        location = (random.random() * 120, random.random() * 120)
+        location = self.get_device_loation()
 
         # encrypt data
         encrypted_data = {
@@ -104,40 +120,75 @@ class ClientApp:
             'mac_address': str(self.encrypt(self.MAC_ADDRESS, id="LOCATIONS-SERVER"))
         }
 
-        r_loc = requests.post(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, self.DEVICE_ID),
-                              json=encrypted_data, auth=auth)
-
-        if r_loc.status_code != 200:
-            print("-     not updated")
+        if self.is_server_reachable():
+            r_loc = requests.post(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, self.DEVICE_ID),
+                                  json=encrypted_data, auth=auth)
+            if r_loc.status_code != 200:
+                print("Location update: Done")
+            else:
+                print("Location update: Failed")
         else:
-            print("-     updated")
-
-    def receive_info_from_nearby_devices(self):
-        pass
+            self.send_info_to_nearby_devices()
 
     def scan_nearby_devices(self):
-        pass
+        devices = bluetooth.discover_devices()
+        addrs = []
+        for addr, _ in devices:
+            addrs.append(addr)
+        return addrs
+
+    def send_info_to_nearby_devices(self):
+        data = {
+            'user_id': str(self.encrypt(self.USER_ID, id='LOCATIONS-SERVER')),
+            'device_id': str(self.encrypt(self.DEVICE_ID, id='LOCATIONS-SERVER')),
+            'location': str(self.encrypt(str(self.get_device_loation()), id='LOCATIONS-SERVER'))
+        }
+
+        addrs = self.scan_nearby_devices()
+
+        sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+        port = 4  # the app bluetooth port is 4
+        for addr in addrs:
+            try:
+                sock.connect((addr, port))
+                sock.send(data)
+            except:
+                pass
+
+    def receive_info_from_nearby_devices(self):
+        #TODO still not very clear
+        sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+        port = 4# the app bluetooth port is 4
+        sock.connect(("", port))
+
+        received = sock.recv(1024)
+        if self.is_server_reachable():
+            self.redirect_data_to_server(received)
+
+    def redirect_data_to_server(self, data):
+        auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
+        requests.post(self.LOCATIONS_SERVER_URL + '/get-redirected-info', json=data, auth=auth)
 
     def generate_private_public_keys(self):
         key = RSA.generate(2048)
         private_key = key.export_key()
-        file_out = open("keys\\private.pem", "wb")
+        file_out = open("keys/private.pem", "wb")
         file_out.write(private_key)
         file_out.close()
 
         public_key = key.publickey().export_key()
-        file_out = open("keys\\public.pem", "wb")
+        file_out = open("keys/public.pem", "wb")
         file_out.write(public_key)
         file_out.close()
 
     def share_public_key(self):
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
-        pk = open('keys\\public.pem', 'r')
+        pk = open('keys/public.pem', 'r')
         files = {'upload_file': pk}
         requests.post(self.AUTH_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
         pk.close()
 
-        pk = open('keys\\public.pem', 'r')
+        pk = open('keys/public.pem', 'r')
         files = {'upload_file': pk}
         requests.post(self.LOCATIONS_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
         pk.close()
@@ -145,7 +196,7 @@ class ClientApp:
     def encrypt(self, message, id='AUTH-SERVER'):
         data = message.encode("utf-8")
 
-        recipient_key = RSA.import_key(open("keys\\public_key_{}.pem".format(id)).read())
+        recipient_key = RSA.import_key(open("keys/public_key_{}.pem".format(id)).read())
         session_key = get_random_bytes(16)
 
         # Encrypt the session key with the public RSA key
@@ -158,7 +209,7 @@ class ClientApp:
         return (enc_session_key, cipher_aes.nonce, tag, ciphertext)
 
     def decrypt(self, message):
-        private_key = RSA.import_key(open("keys\\private.pem").read())
+        private_key = RSA.import_key(open("keys/private.pem").read())
 
         enc_session_key, nonce, tag, ciphertext = message
 
@@ -173,14 +224,29 @@ class ClientApp:
 
 
 client = ClientApp()
-client.register_user("mustafa", "1291241241")
-# client.login("mustafa", "1291241241")
-client.add_this_device("ASFA42DWF3")
-client.update_my_location()
-client.check_my_devices_location()
 
-# client.share_public_key()
-# client.add_this_device("ASFA42DWF3")
-# client.update_my_location()
-# locs = client.check_my_devices_location()
-# print(locs)
+bluetooth_point = threading.Thread(target=bluetooth_point_reaction, args=(client,))
+bluetooth_point.start()
+periodic_update = threading.Thread(target=periodic_location_update, args=(client,))
+periodic_update.start()
+
+options = ["login", "register", "add device", "update device location", "check devices locations"]
+while True:
+    print("Select a number:")
+    for i, option in enumerate(options):
+        print('{}-  {}'.format(i, option))
+    command = int(input('select: '))
+    if command == options.index("login"):
+        username = input("username: ")
+        password = input("password: ")
+        client.login(username, password)
+    elif command == options.index("register"):
+        username = input("username: ")
+        password = input("password: ")
+        client.register_user(username, password)
+    elif command == options.index("add device"):
+        client.add_this_device()
+    elif command == options.index("update device location"):
+        client.update_my_location()
+    elif command == options.index("check devices locations"):
+        client.check_my_devices_location()

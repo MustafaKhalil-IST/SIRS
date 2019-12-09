@@ -1,8 +1,8 @@
 import os
 import ast
-from Cryptodome.Cipher import PKCS1_OAEP, AES
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Random import get_random_bytes
+from Crypto.Cipher import PKCS1_OAEP, AES
+from Crypto.PublicKey import RSA
+from Crypto.Random import get_random_bytes
 from flask import Flask, abort, request, jsonify, g, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_httpauth import HTTPBasicAuth
@@ -14,7 +14,7 @@ import json
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sirs is an interested subject'
 # update this in your machine
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///C:\\Users\\cash\\MEIC\\SIRS\\SIRS\\Project\\AuthServer\\db.sqlite'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///./db.sqlite'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 
 db = SQLAlchemy(app)
@@ -98,6 +98,7 @@ def register_user():
 def login_user():
     username = decrypt(ast.literal_eval(request.json.get('username')))
     password = decrypt(ast.literal_eval(request.json.get('password')))
+    device_mac_address = decrypt(ast.literal_eval(request.json.get('device_mac_address')))
 
     if username is None or password is None:
         abort(400)
@@ -106,7 +107,11 @@ def login_user():
     user = User.query.filter_by(username=username).first()
     login = verify_password(username, password)
     if login:
-        return jsonify({'user_id': user.id}), 201
+        device_id = None
+        for device in user.devices:
+            if device.mac_address == device_mac_address:
+                device_id = device.id
+        return jsonify({'user_id': user.id, 'device_id': device_id}), 201
     else:
         return jsonify({'message': "credentials are wrong"}), 401
 
@@ -135,7 +140,7 @@ def add_device(id):
 @auth.login_required
 def get_public_key(id):
     public_key = request.files['upload_file']
-    public_key.save('keys\\public_key_{}.pem'.format(id))
+    public_key.save('keys/public_key_{}.pem'.format(id))
     return jsonify({'message': 'shared'})
 
 
@@ -164,7 +169,7 @@ def check_authorization():
 def encrypt(message, id):
     data = message.encode("utf-8")
 
-    recipient_key = RSA.import_key(open("keys\\public_key_{}.pem".format(id)).read())
+    recipient_key = RSA.import_key(open("keys/public_key_{}.pem".format(id)).read())
     session_key = get_random_bytes(16)
 
     # Encrypt the session key with the public RSA key
@@ -179,7 +184,7 @@ def encrypt(message, id):
 
 
 def decrypt(message):
-    private_key = RSA.import_key(open("keys\\private_key_AUTH-SERVER.pem").read())
+    private_key = RSA.import_key(open("keys/private_key_AUTH-SERVER.pem").read())
     enc_session_key, nonce, tag, ciphertext = message
 
     # Decrypt the session key with the private RSA key
@@ -195,12 +200,12 @@ def decrypt(message):
 def generate_private_public_keys():
     key = RSA.generate(2048)
     private_key = key.export_key()
-    file_out = open("keys\\private_key_AUTH-SERVER.pem", "wb")
+    file_out = open("keys/private_key_AUTH-SERVER.pem", "wb")
     file_out.write(private_key)
     file_out.close()
 
     public_key = key.publickey().export_key()
-    file_out = open("keys\\public_key_AUTH-SERVER.pem", "wb")
+    file_out = open("keys/public_key_AUTH-SERVER.pem", "wb")
     file_out.write(public_key)
     file_out.close()
 
