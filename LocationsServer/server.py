@@ -67,18 +67,26 @@ def check_authorization(username, password):
 
     return r.json()['is-authorized']
 
-# TODO add encryption
+
 @app.route('/locations/<id>/locate/<dev>', methods=['GET'])
 def get_location(id, dev):
+    print()
     location = db.session.query(Location.location).filter_by(devices_id=dev).order_by(Location.timestamp.desc()).first()
+    timestamp = db.session.query(Location.timestamp).filter_by(devices_id=dev).order_by(Location.timestamp.desc()).first()
     location = location[0]
+    timestamp = timestamp[0]
 
     if not location:
         return jsonify({'message': 'No location information!'})
 
-    location = encrypt(location, id)
+    response = {
+        'location': location,
+        'timestamp': timestamp
+    }
 
-    return jsonify({'location': str(location)})
+    response = encrypt(str(response), id)
+
+    return jsonify({'response': str(response)})
 
 
 @app.route('/locations/<id>/locate/<dev>', methods=['POST'])

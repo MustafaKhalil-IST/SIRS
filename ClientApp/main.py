@@ -67,6 +67,9 @@ class ClientApp:
             self.DEVICE_ID = r.json()['device_id']
             self.USER_ID = r.json()['user_id']
             self.LOGGEDIN = True
+            return 1
+        else:
+            return 0
 
 
     def add_this_device(self):
@@ -94,13 +97,13 @@ class ClientApp:
         print('Locations: ')
         for dev in devices:
             r_loc = requests.get(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, dev['id']))
-            location = ast.literal_eval(self.decrypt(ast.literal_eval(r_loc.json()['location'])))
-            print(dev, location)
+            response = self.decrypt(ast.literal_eval(r_loc.json()['response']))
+            print('Device {} was last seen in location {}'.format(dev['id'], response))
 
-        #return locations
 
     """Devices Interface"""
     def get_device_loation(self):
+        # just a random thing, to prove a concept
         return (random.random() * 120, random.random() * 120)
 
     def is_server_reachable(self):
@@ -123,7 +126,7 @@ class ClientApp:
         if self.is_server_reachable():
             r_loc = requests.post(self.LOCATIONS_SERVER_URL + '/{}/locate/{}'.format(self.USER_ID, self.DEVICE_ID),
                                   json=encrypted_data, auth=auth)
-            if r_loc.status_code != 200:
+            if r_loc.status_code == 200:
                 print("Location update: Done")
             else:
                 print("Location update: Failed")
@@ -237,9 +240,15 @@ while True:
         print('{}-  {}'.format(i, option))
     command = int(input('select: '))
     if command == options.index("login"):
-        username = input("username: ")
-        password = input("password: ")
-        client.login(username, password)
+        res = 0
+        while res == 0:
+            username = input("username: ")
+            password = input("password: ")
+            res = client.login(username, password)
+            if res == 0:
+                print("Credentials are wrong, try again")
+            else:
+                print("You are logged in")
     elif command == options.index("register"):
         username = input("username: ")
         password = input("password: ")
