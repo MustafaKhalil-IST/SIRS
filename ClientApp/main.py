@@ -1,4 +1,8 @@
-import bluetooth
+try:
+    import bluetooth
+except:
+    pass
+
 import requests
 import ast
 import random
@@ -9,6 +13,19 @@ from Crypto.Random import get_random_bytes
 from Crypto.Cipher import AES, PKCS1_OAEP
 import threading
 import time
+
+
+def read_properties():
+    props = {}
+    f = open('../properties.conf')
+    for line in f.readlines():
+        props[line.split(":")[0]] = line.split(":")[1].replace('\n', '')
+    f.close()
+    return props
+
+props = read_properties()
+print(props)
+
 
 
 def bluetooth_point_reaction(client):
@@ -27,8 +44,8 @@ def periodic_location_update(client):
 
 # TODO add logging
 class ClientApp:
-    AUTH_SERVER_URL = "http://127.0.0.1:8000/auth"
-    LOCATIONS_SERVER_URL = "http://127.0.0.1:8001/locations"
+    AUTH_SERVER_URL = "http://{}:8000/auth".format(props['auth-server'])
+    LOCATIONS_SERVER_URL = "http://{}:8001/locations".format(props['locations-server'])
     LOGGEDIN = False
     USERNAME, PASSWORD, USER_ID, DEVICE_ID, TOKEN, MAC_ADDRESS = None, None, None, None, None, None
 

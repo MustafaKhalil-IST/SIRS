@@ -11,6 +11,18 @@ from itsdangerous import (TimedJSONWebSignatureSerializer
                           as Serializer, BadSignature, SignatureExpired)
 import json
 
+
+def read_properties():
+    props = {}
+    f = open('../properties.conf')
+    for line in f.readlines():
+        props[line.split(":")[0]] = line.split(":")[1].replace('\n', '')
+    f.close()
+    return props
+
+props = read_properties()
+print(props)
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sirs is an interested subject'
 # update this in your machine
@@ -156,9 +168,9 @@ def get_user_devices(id):
 
 @app.route('/auth/check-authorization', methods=['POST'])
 def check_authorization():
-    LOCATION_SERVER = "127.0.0.1"# to be updated
+    LOCATION_SERVER = props['locations-server'] #"193.136.154.45" to be updated
     if request.remote_addr != LOCATION_SERVER:
-        return jsonify({"message": "request is not authorized"})
+        return jsonify({"message": "request is not authorized", 'is-authorized': False})
 
     data = request.json.get("data")
     username = decrypt(ast.literal_eval(data['username']))
@@ -213,5 +225,5 @@ def generate_private_public_keys():
 if __name__ == '__main__':
     # generate_private_public_keys()
     db.create_all()
-    app.run(port=8000)
+    app.run(host="193.136.154.45", port=8000)
 

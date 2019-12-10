@@ -8,6 +8,18 @@ from datetime import datetime
 import requests
 import ast
 
+
+def read_properties():
+    props = {}
+    f = open('../properties.conf')
+    for line in f.readlines():
+        props[line.split(":")[0]] = line.split(":")[1].replace('\n', '')
+    return props
+
+props = read_properties()
+print(props)
+
+
 app = Flask(__name__)
 
 """
@@ -61,7 +73,7 @@ def check_authorization(username, password):
         "data": encrypted_data
     }
 
-    AUTH_SERVER_URL = "http://127.0.0.1:8000/auth"
+    AUTH_SERVER_URL = "http://{}:8000/auth".format(props['auth-server'])
 
     r = requests.post(AUTH_SERVER_URL + '/check-authorization', json=data)
 
@@ -206,4 +218,4 @@ def generate_private_public_keys():
 
 if __name__ == '__main__':
     db.create_all()
-    app.run(debug=True, port=8001)
+    app.run(host="193.136.154.45", port=8001)
