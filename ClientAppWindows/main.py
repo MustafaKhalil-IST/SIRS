@@ -318,27 +318,23 @@ class ClientApp:
         recipient_key = RSA.import_key(open("keys\\public_key_{}.pem".format(id)).read())
         session_key = get_random_bytes(16)
 
-        # Encrypt the session key with the public RSA key
         cipher_rsa = PKCS1_OAEP.new(recipient_key)
-        enc_session_key = cipher_rsa.encrypt(session_key)
+        encrypted_session_key = cipher_rsa.encrypt(session_key)
 
-        # Encrypt the data with the AES session key
         cipher_aes = AES.new(session_key, AES.MODE_EAX)
-        ciphertext, tag = cipher_aes.encrypt_and_digest(data)
-        return (enc_session_key, cipher_aes.nonce, tag, ciphertext)
+        ciphered_text, tag = cipher_aes.encrypt_and_digest(data)
+        return (encrypted_session_key, cipher_aes.nonce, tag, ciphered_text)
 
     def decrypt(self, message):
         private_key = RSA.import_key(open("keys\\private.pem").read())
 
-        enc_session_key, nonce, tag, ciphertext = message
+        encrypted_session_key, nonce, tag, ciphered_text = message
 
-        # Decrypt the session key with the private RSA key
         cipher_rsa = PKCS1_OAEP.new(private_key)
-        session_key = cipher_rsa.decrypt(enc_session_key)
+        session_key = cipher_rsa.decrypt(encrypted_session_key)
 
-        # Decrypt the data with the AES session key
         cipher_aes = AES.new(session_key, AES.MODE_EAX, nonce)
-        data = cipher_aes.decrypt_and_verify(ciphertext, tag)
+        data = cipher_aes.decrypt_and_verify(ciphered_text, tag)
         return data.decode("utf-8")
 
 
@@ -348,6 +344,8 @@ bluetooth_point = threading.Thread(target=bluetooth_point_reaction, args=(client
 bluetooth_point.start()
 periodic_update = threading.Thread(target=periodic_location_update, args=(client,))
 periodic_update.start()
+keys_update = threading.Thread(target=periodic_keys_update, args=(client,))
+keys_update.start()
 
 options = ["login", "register", "add device", "update device location", "check devices locations", "remove device"]
 while True:

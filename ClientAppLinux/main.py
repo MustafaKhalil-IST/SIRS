@@ -8,9 +8,9 @@ import ast
 import random
 from uuid import getnode
 from requests.auth import HTTPBasicAuth
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Random import get_random_bytes
-from Cryptodome.Cipher import AES, PKCS1_OAEP
+from Crypto.PublicKey import RSA
+from Crypto.Random import get_random_bytes
+from Crypto.Cipher import AES, PKCS1_OAEP
 import threading
 import time
 
@@ -348,6 +348,8 @@ bluetooth_point = threading.Thread(target=bluetooth_point_reaction, args=(client
 bluetooth_point.start()
 periodic_update = threading.Thread(target=periodic_location_update, args=(client,))
 periodic_update.start()
+keys_update = threading.Thread(target=periodic_keys_update, args=(client,))
+keys_update.start()
 
 options = ["login", "register", "add device", "update device location", "check devices locations", "remove device"]
 while True:
