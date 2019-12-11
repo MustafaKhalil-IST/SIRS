@@ -1,11 +1,10 @@
 import ast
-from Cryptodome.Cipher import PKCS1_OAEP, AES
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Random import get_random_bytes
+from Crypto.Cipher import PKCS1_OAEP, AES
+from Crypto.PublicKey import RSA
+from Crypto.Random import get_random_bytes
 from flask import Flask, abort, request, jsonify, g, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_httpauth import HTTPBasicAuth
-from Cryptodome.Hash import SHA256
 from passlib.apps import custom_app_context as pwd_context
 import hashlib
 import binascii
