@@ -58,8 +58,7 @@ class ClientApp:
 
     """User Interface"""
     def register_user(self, username, password):
-        self.generate_private_public_keys()
-
+        #self.generate_private_public_keys()
         data = {
             "username": username,
             "password": password
@@ -100,14 +99,35 @@ class ClientApp:
             self.DEVICE_ID = r.json()['device_id']
             self.USER_ID = r.json()['user_id']
             self.LOGGEDIN = True
-            # self.update_my_location()
+            self.IS_MY_DEVICE = self.check_is_my_device()
             return 1
         else:
             if 'message' in r.json():
                 print(r.json()['message'])
             return 0
 
+    def check_is_my_device(self):
+        auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
+
+        device_mac_address = str(getnode())
+        # encrypt data
+        data = {
+            "device_mac_address": device_mac_address
+        }
+
+        encrypted_data = {
+            'data': str(self.encrypt(str(data)))
+        }
+        r = requests.post(url=self.AUTH_SERVER_URL + '/users/' + str(self.USER_ID) + '/devices/is_my_device',
+                          json=encrypted_data, auth=auth)
+
+        return r.json()['is_my_device']
+
     def add_this_device(self):
+        if not self.LOGGEDIN:
+            print("[Error]: You are not logged in")
+            return
+
         device_mac_address = str(getnode())
         # encrypt data
         data = {
@@ -130,6 +150,15 @@ class ClientApp:
             print("Add Device: {}".format(r.json()['message']))
 
     def check_my_devices_location(self):
+        if not self.LOGGEDIN:
+            print("[Error]: You are not logged in")
+            return
+
+        if not self.IS_MY_DEVICE:
+            # TODO cases
+            print("You are not allowed to see your devices locations in this device")
+            return
+
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
         r_auth = requests.get(self.AUTH_SERVER_URL + '/users/{}/devices'.format(self.USER_ID), auth=auth)
 
@@ -170,6 +199,10 @@ class ClientApp:
         print(r.json()['message'])
 
     def update_my_location(self):
+        if not self.LOGGEDIN:
+            print("[Error]: You are not logged in")
+            return
+
         # check_is_my_decice()
         if not self.IS_MY_DEVICE:
             print("This device is not owned by you")
@@ -259,7 +292,7 @@ class ClientApp:
         file_out.close()
 
         public_key = key.publickey().export_key()
-        file_out = open("key/public.pem", "wb")
+        file_out = open("keys/public.pem", "wb")
         file_out.write(public_key)
         file_out.close()
 
@@ -267,12 +300,12 @@ class ClientApp:
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
         pk = open('keys/public.pem', 'r')
         files = {'upload_file': pk}
-        requests.post(self.AUTH_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
+        requests.post(self.AUTH_SERVER_URL + '/{}/get_public_key'.format(self.DEVICE_ID), files=files, auth=auth)
         pk.close()
 
         pk = open('keys/public.pem', 'r')
         files = {'upload_file': pk}
-        requests.post(self.LOCATIONS_SERVER_URL + '/{}/get_public_key'.format(self.USER_ID), files=files, auth=auth)
+        requests.post(self.LOCATIONS_SERVER_URL + '/{}/get_public_key'.format(self.DEVICE_ID), files=files, auth=auth)
         pk.close()
 
     def encrypt(self, message, id='AUTH-SERVER'):

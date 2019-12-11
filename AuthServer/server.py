@@ -147,12 +147,36 @@ def i_am_alive():
     return jsonify({'message': 'I am Alive'})
 
 
+@app.route('/auth/users/<id>/devices/is_my_device', methods=['POST'])
+@auth.login_required
+def is_my_device(id):
+    user = User.query.filter_by(id=id).first()
+
+    # TODO everywhere
+    if user.username != request.authorization['username']:
+        return jsonify({'message': 'not allowed'}), 401
+    if user is None:
+        return jsonify({'message': 'error'}), 404
+
+    data = ast.literal_eval(decrypt(ast.literal_eval(request.json['data'])))
+    device_mac_address = int(data['device_mac_address'])
+
+    device = Device.query.filter_by(mac_address=device_mac_address).first()
+    if device is None or device.owner_id != id:
+        return jsonify({'is_my_device': False}), 200
+    else:
+        return jsonify({'is_my_device': True}), 200
+
+
 @app.route('/auth/users/<id>/devices/remove-device', methods=['POST'])
 @auth.login_required
 def remove_device(id):
     user = User.query.filter_by(id=id).first()
     data = ast.literal_eval(decrypt(ast.literal_eval(request.json['data'])))
     device_id = int(data['device_id'])
+
+    if user.username != request.authorization['username']:
+        return jsonify({'message': 'not allowed'}), 401
 
     if Device.query.filter_by(id=device_id).first() is None:
         return jsonify({'message': 'this device deos not exits'}), 404
@@ -163,7 +187,6 @@ def remove_device(id):
     Device.query.filter_by(id=device_id).delete()
     db.session.commit()
 
-    # return jsonify({'message': 'error'}), 400
     return jsonify({'message': 'done'}), 200
 
 
@@ -221,6 +244,10 @@ def get_auth_token():
 @app.route('/auth/users/<int:id>/devices', methods=['POST'])
 @auth.login_required
 def add_device(id):
+    user = User.query.filter_by(id=id).first()
+    if user.username != request.authorization['username']:
+        return jsonify({'message': 'not allowed'}), 401
+
     data = ast.literal_eval(decrypt(ast.literal_eval(request.json.get('data'))))
     device_mac_address = data['device_mac_address']
     user = User.query.get(id)
@@ -241,6 +268,10 @@ def add_device(id):
 @app.route('/auth/<int:id>/get_public_key', methods=['POST'])
 @auth.login_required
 def get_public_key(id):
+    user = User.query.filter_by(id=id).first()
+    if user.username != request.authorization['username']:
+        return jsonify({'message': 'not allowed'}), 401
+
     public_key = request.files['upload_file']
     public_key.save('keys/public_key_{}.pem'.format(id))
     return jsonify({'message': 'shared'})
@@ -249,6 +280,10 @@ def get_public_key(id):
 @app.route('/auth/users/<int:id>/devices', methods=['GET'])
 @auth.login_required
 def get_user_devices(id):
+    user = User.query.filter_by(id=id).first()
+    if user.username != request.authorization['username']:
+        return jsonify({'message': 'not allowed'}), 401
+
     user = User.query.get(id)
     if not user:
         abort(400)
@@ -268,7 +303,6 @@ def check_ownership():
 
     user = User.query.filter_by(id=user_id).first()
 
-    #TODO add encryption
     if user is not None:
         is_owner = False
         for dev in user.devices:
