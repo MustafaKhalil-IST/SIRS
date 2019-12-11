@@ -185,6 +185,10 @@ class ClientApp:
             return False
 
     def remove_device(self, dev_id):
+        if not self.LOGGEDIN:
+            print("[Error]: You are not logged in")
+            return
+
         auth = HTTPBasicAuth(self.USERNAME, self.PASSWORD)
         data = {
             'device_id': dev_id
@@ -353,7 +357,7 @@ while True:
     command = int(input('select: '))
     if command == options.index("login"):
         res = 0
-        while res == 0:
+        if res == 0:
             username = input("username: ")
             password = input("password: ")
             res = client.login(username, password)
